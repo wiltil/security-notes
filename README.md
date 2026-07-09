@@ -4,11 +4,11 @@ Personal Cybersecurity notes, lab learnings, tool usage, and web security concep
 A personal repository documenting my cybersecurity journey.
 
 Current Topics : 
-1 > Web Security
-2 > SQL injection 
-3 > Burp Suite
-4 > Linux Fundamentals
-5 > Security tools
+1. Web Security
+2. SQL injection
+3. Burp Suite
+4. Linux Fundamentals
+5. Security tools
 
 
 Purpose : 
