@@ -87,3 +87,4 @@ https://insecure-website.com/product/lookup?category=fizzy%27%7c%7c%27%31%27%3d%
 https://insecure-website.com/product/lookup?category=fizzy'%00
 this.category == 'fizzy'\u0000' && this.released == 1
 ```
+
