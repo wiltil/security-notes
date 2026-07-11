@@ -407,3 +407,112 @@ xyz' AND (SELECT CASE WHEN (Username='Administrator'
 AND SUBSTRING(Password,1,1)>'m') 
 THEN CAST('abc' AS INT) ELSE 'a' END FROM Users)='a failed conversion leaks.
 ```
+
+---
+
+# Blind TIME based SQL Injection: Triggering Time Delays
+
+## Concept
+- Blind SQL injection can be exploited by measuring **response times**.
+- If a condition is true, the query is forced to pause (delay).
+- If false, the query executes normally.
+- Differences in response time reveal the truth of injected conditions.
+
+## Example: SQL Server
+Payloads:
+```sql
+'; IF (1=2) WAITFOR DELAY '0:0:10'--
+'; IF (1=1) WAITFOR DELAY '0:0:10'--
+```
+
+```sql
+'; IF (SELECT COUNT(Username) FROM Users WHERE Username = 'Administrator' AND SUBSTRING(Password, 1, 1) > 'm') = 1 WAITFOR DELAY '0:0:{delay}'--
+```
+
+---
+# Out-of-Band SQL Injection (OAST)
+
+## Concept
+- Out-of-band SQL injection occurs when normal channels (errors, responses, timing) don’t provide feedback.
+- Instead, the database is forced to make an **external interaction** (DNS/HTTP request, file write).
+- The attacker monitors this external channel to confirm execution and exfiltrate data.
+
+## Examples
+- **MSSQL** → `xp_dirtree` or `xp_cmdshell` can trigger DNS/HTTP callbacks.
+- **MySQL** → `LOAD_FILE()` or `SELECT ... INTO OUTFILE` can leak data externally.
+- **PostgreSQL** → `COPY TO PROGRAM 'curl ...'` can send data out.
+- **Oracle** → `UTL_HTTP` or `DBMS_LDAP` can make outbound requests.
+
+## Workflow
+1. Inject payload that forces DB to contact attacker-controlled server.
+2. Monitor DNS/HTTP logs (e.g., Burp Collaborator, Interactsh).
+3. Use crafted payloads to encode/exfiltrate sensitive data in the outbound request.
+
+---
+
+# SQL Injection in Different Contexts
+
+## Concept
+- SQL injection is not limited to query strings.
+- Any **controllable input** processed into SQL (headers, cookies, POST body, JSON, XML) can be exploited.
+- Different formats provide opportunities to **obfuscate payloads** and bypass filters/WAFs.
+
+## JSON / XML Injection
+- Applications may parse JSON or XML input directly into SQL queries.
+- Example: XML-based injection using escape sequences:
+```xml
+<stockCheck>
+    <productId>123</productId>
+    <storeId>999 &#x53;ELECT * FROM information_schema.tables</storeId>
+</stockCheck>
+```
+&#x53; is the XML escape for S.
+Decoded server-side → becomes SELECT * FROM information_schema.tables.
+
+### Bypassing Filters
+Weak WAFs often block obvious keywords (SELECT, UNION, DROP).
+*Attackers can bypass by:*
+- Encoding characters (&#x53;ELECT → SELECT).
+- Using case variations (SeLeCt).
+- Splitting keywords (SEL/**/ECT).
+- Leveraging alternate encodings (UTF-8, hex).
+
+---
+
+# Second-Order SQL Injection & Prevention
+
+## Second-Order SQL Injection
+- Occurs when **malicious input is stored in the database** and later reused in a query without proper sanitization.
+- Unlike first-order SQLi (immediate execution), second-order attacks exploit **trusted data** that developers assume is safe.
+- Example:
+  1. Attacker registers with username: `admin'--`
+  2. Input is stored safely in DB.
+  3. Later, application builds a query using stored username:
+     ```sql
+     SELECT * FROM users WHERE username = 'admin'--';
+     ```
+  4. The injected payload executes when reused, bypassing authentication.
+
+**Key Point:** Second-order SQLi is harder to detect because the malicious input doesn’t break the query until it is reused in a different context.
+
+---
+
+## Preventing SQL Injection
+- **Use Parameterized Queries (Prepared Statements)**  
+  Always bind user input as parameters instead of concatenating strings.
+
+### Vulnerable Code (Java JDBC)
+```java
+String query = "SELECT * FROM products WHERE category = '" + input + "'";
+Statement statement = connection.createStatement();
+ResultSet resultSet = statement.executeQuery(query);
+```
+
+### prepared or parametrised statemenets : 
+Best Practices
+
+- Avoid dynamic SQL string concatenation.
+- Use stored procedures with parameters.
+- Apply least privilege to DB accounts.
+- Validate and sanitize input (whitelisting).
+- Monitor and log suspicious queries.
