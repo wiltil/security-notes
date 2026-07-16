@@ -68,7 +68,7 @@ Content-Security-Policy: default-src 'self';
 - Can leak sensitive info (e.g., CSRF tokens) → attacker can perform unauthorized actions.  
 - Useful fallback when input filters or defenses block script execution.  
 ---
-# 1. EVERYTHING ABOUT REFLECTED XSS:
+## 1. EVERYTHING ABOUT REFLECTED XSS:
 ## ⚠️ Impact of Reflected XSS
 - Attacker‑controlled script runs in victim’s browser → full compromise possible.  
 - Can:
@@ -84,3 +84,77 @@ Content-Security-Policy: default-src 'self';
 - Generally **less severe** than Stored XSS (since it needs external delivery).  
 - Still dangerous: session hijacking, credential theft, user impersonation.  
 ---
+## 🔍 Finding & Testing Reflected XSS
+
+- **Automated:** Use Burp Suite’s scanner for quick detection.  
+- **Manual Steps:**
+  1. **Test all entry points** → URL params, body, path, headers.  
+  2. **Inject random value** (8‑char alphanumeric) → check if reflected.  
+  3. **Identify reflection context** → HTML text, attribute, JS string, etc.  
+  4. **Insert candidate payload** → e.g., `<script>alert(1)</script>` in Burp Repeater.  
+  5. **Try alternative payloads** if filtered/modified.  
+  6. **Confirm in browser** → e.g., `alert(document.domain)` popup shows execution.
+
+### EXAMPLE :
+Web application shows this for query search: 
+```https
+https://insecure-website.com/search?term=gift
+```
+It flows into the body in the following way :
+```https
+<p>You searched for: gift</p>
+```
+Then it can be exploited given no encoding is present : 
+```https
+https://insecure-website.com/search?term=<script>/*+Bad+stuff+here...+*/</script>
+```
+Reflects in the page like : 
+
+```https
+<p>You searched for: <script>/* Bad stuff here... */</script></p>
+```
+---
+
+## 💾 Stored XSS (Persistent)
+- Occurs when attacker input is **saved** (e.g., DB, comments, profiles) and later rendered unsafely in responses.  
+- Example: Malicious `<script>` in a blog comment → executes for every visitor.  
+
+### ⚠️ Impact
+- Same as reflected XSS (user actions, data theft, defacement, trojans).  
+- **Key difference:** Self‑contained in the app → no external delivery needed.  
+- Especially dangerous for logged‑in users → guaranteed compromise.  
+
+### 🔍 Finding & Testing
+- Use Burp Suite scanner for detection.  
+- Manually:  
+  - Identify **entry points** (params, body, path, headers, external feeds).  
+  - Track to **exit points** (responses, logs, feeds, UI).  
+  - Insert unique values → confirm persistence.  
+  - Test payloads based on context (HTML, attributes, JS).  
+- Stored data may be overwritten, so test systematically.  
+
+### 💾 Stored XSS Example
+- User submits comment → stored in DB → shown in responses.  
+- Normal input:  
+  ```http
+  POST /post/comment
+  comment=This+post+was+extremely+helpful
+
+  ```
+
+- Normal output:  
+  ```http
+   Output: <p>This post was extremely helpful.</p>
+  ```
+
+- Malicious input:
+  ```http
+  comment=<script>/* Bad stuff here... */</script>
+  ```
+- Malicious Output:
+  ```http
+  comment=<script>/* Bad stuff here... */</script>
+  ```
+
+---
+
