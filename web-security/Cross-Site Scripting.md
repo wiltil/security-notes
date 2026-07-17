@@ -425,3 +425,74 @@ Flow:
 - Reflected DOM XSS: Input is echoed immediately and processed by client‑side JS.
 - Stored DOM XSS: Input is saved on server, then later processed unsafely in the DOM.
 - Defense: Encode output, sanitize input, avoid unsafe sinks (eval, innerHTML, etc.), and use frameworks securely.
+
+---
+
+## 🧩 Common Sinks Leading to DOM‑XSS
+
+DOM‑XSS occurs when attacker‑controlled data flows into unsafe sinks. Below are key sinks to watch for:
+
+### Native DOM Sinks
+- `document.write()` / `document.writeln()` → write raw HTML directly.
+- `document.domain` → can be manipulated for cookie scoping.
+- `element.innerHTML` → injects HTML inside element.
+- `element.outerHTML` → replaces entire element.
+- `element.insertAdjacentHTML()` → inserts HTML relative to element.
+- `element.onevent` → event handler properties (e.g., `element.onclick = userInput`).
+
+### jQuery Sinks
+- DOM manipulation functions:
+  - `add()`, `after()`, `append()`, `before()`, `prepend()`
+  - `insertAfter()`, `insertBefore()`
+  - `replaceAll()`, `replaceWith()`
+  - `wrap()`, `wrapInner()`, `wrapAll()`
+- Content/attribute functions:
+  - `html()` → sets HTML content.
+  - `animate()` → can inject styles with attacker data.
+  - `attr()` (covered earlier) → sets attributes.
+- Internal functions:
+  - `has()`, `constructor()`, `init()`, `index()` → can process attacker input.
+  - `jQuery.parseHTML()` / `$.parseHTML()` → parse strings into DOM nodes.
+
+---
+
+### 📝 Key Notes
+- **HTML sinks** (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, jQuery `.html()`) → require event handlers or special tags for execution.
+- **Direct execution sinks** (`document.write`, `onevent`) → can run `<script>` immediately.
+- **jQuery sinks** expand attack surface since they wrap native DOM methods.
+- Always trace **source → sink** paths when analyzing DOM XSS.
+
+---
+
+## 🔗 Sources → Sinks → Exploit Strategies
+
+| **Source**            | **Sink**                  | **Exploit Strategy / Example Payload** |
+|------------------------|---------------------------|----------------------------------------|
+| `location.search`      | `document.write()`        | `?x=<script>alert(1)</script>` → executes immediately |
+| `location.search`      | `innerHTML`               | `?q=<img src=x onerror=alert(1)>` → event handler fires |
+| `location.hash`        | jQuery `$()` selector     | `#<img src=x onerror=alert(1)>` → injected via hashchange |
+| `location.search`      | jQuery `.attr("href")`    | `?returnUrl=javascript:alert(1)` → link becomes JS URL |
+| `document.cookie`      | `eval()`                  | `eval(document.cookie)` → attacker‑controlled cookie executes |
+| `document.referrer`    | `document.write()`        | If referrer is injected: `<script>alert(document.referrer)</script>` |
+| `window.name`          | `innerHTML`               | `window.name="<img src=x onerror=alert(1)>"; div.innerHTML=window.name;` |
+| `localStorage`         | `insertAdjacentHTML()`    | `localStorage.setItem("x","<img src=x onerror=alert(1)>"); div.insertAdjacentHTML("beforeend", localStorage.getItem("x"));` |
+| `sessionStorage`       | `outerHTML`               | Replace element with malicious HTML stored in sessionStorage |
+| `location.href`        | `element.src` / `href`    | `window.location.href="javascript:alert(1)"` → executes on navigation |
+| `document.URL`         | `Function()`              | `new Function("alert(document.URL)")();` |
+| Any user input         | `setTimeout()` / `setInterval()` | `setTimeout("alert(1)",1000)` → string executes as code |
+
+---
+
+### 📝 Quick Notes
+- **Text sinks** (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, jQuery `.html()`) → need event handlers (`onerror`, `onload`) or special tags (`iframe`, `svg`).  
+- **Execution sinks** (`eval`, `Function`, `setTimeout` with string, `document.write`) → run attacker code directly.  
+- **Attribute sinks** (`.attr()`, `href`, `src`, `action`) → can trigger redirects or load malicious resources.  
+- **Third‑party sinks** (jQuery functions like `.append()`, `.replaceWith()`, `.wrap()`) → wrap native DOM methods, so same risks apply.  
+
+---
+
+### ⚠️ Defense
+- Always sanitize sources before use.  
+- Encode output (`<` → `&lt;`, `>` → `&gt;`).  
+- Avoid unsafe sinks (`eval`, `document.write`, `innerHTML`).  
+- Upgrade libraries (e.g., jQuery) to patched versions.
