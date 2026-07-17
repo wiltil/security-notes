@@ -158,3 +158,186 @@ Reflects in the page like :
 
 ---
 
+# ⚔️ Exploiting DOM XSS with Different Sources and Sinks
+
+## 📌 Overview
+- DOM‑based XSS occurs when **user‑controlled data (source)** flows into a **dangerous DOM method (sink)** without proper sanitization.
+- Exploitability depends on:
+  - Which source is used (`location.search`, `location.hash`, etc.)
+  - Which sink is used (`document.write`, `innerHTML`, jQuery functions, etc.)
+  - Any surrounding context (inside tags, attributes, or elements).
+- Some sinks execute `<script>` directly, others require creative payloads (event handlers, image tags, iframes).
+
+---
+
+## 🧩 Common Sources (summarised view)
+- `location.search` → query string of the URL  
+- `location.hash` → fragment identifier after `#`  
+- `document.cookie` → cookies  
+- `document.referrer` → referring URL  
+- `window.name` → window name property
+
+## 🧩 Common Sources
+
+These are typical **user‑controlled sources** in the DOM that can lead to XSS if passed into unsafe sinks.
+
+- `location.search` → query string of the URL  
+  ```javascript
+  // URL: https://site.com/page?q=hello
+  console.log(location.search); // "?q=hello"
+  ```
+- `location.hash` → fragment identifier after #
+  ```javascript
+  console.log(location.hash); // "#section1"
+  ```
+- `document.cookie` → cookies for the current domain
+  ```javascript
+  // Cookies: sessionid=abc123; theme=dark
+  console.log(document.cookie); // "sessionid=abc123; theme=dark"
+  ```
+- `document.referrer` → URL of the previous page
+ ```javascript
+  // If user came from https://google.com
+  console.log(document.referrer); // "https://google.com/"
+  ```
+- `window.name` → name of the current window (can be set via links/iframes)
+  ```javascript
+  window.name = "Avinash";
+  console.log(window.name); // "Avinash"
+  ```
+
+- `location.href` → full URL of the current page
+  ```javascript
+  // URL: https://site.com/page?q=123#test
+  console.log(location.href); // "https://site.com/page?q=123#test"
+
+  ```
+
+- `location.pathname` → path part of the URL
+  ```javascript
+  // URL: https://site.com/books/list
+  console.log(location.pathname); // "/books/list"
+  ```
+
+- `location.origin` → scheme + host + port
+  ```javascript
+  // URL: https://site.com:8080/page
+  console.log(location.origin); // "https://site.com:8080"
+  ```
+
+- `localStorage` → persistent key/value storage in browser
+  ```javascript
+  localStorage.setItem("user", "Avinash");
+  console.log(localStorage.getItem("user")); // "Avinash"
+  ```
+
+- `sessionStorage` → temporary key/value storage (per tab)
+  ```javascript
+  sessionStorage.setItem("token", "xyz");
+  console.log(sessionStorage.getItem("token")); // "xyz"
+  ```
+- `document.URL` → full URL of the document
+  ```javascript
+  console.log(document.URL); // "https://site.com/page?q=123"
+  ```
+
+- `document.domain` → domain of the current document
+  ```javascript
+  console.log(document.domain); // "site.com"
+  ```
+Any of these sources can be attacker‑controlled if the application reads from them and passes the value into a sink like document.write, innerHTML, or jQuery functions. Always trace source → sink paths when testing for DOM XSS.
+---
+
+## 🧩 Common Sinks(summarised)
+- `document.write()` → writes raw HTML into the page  
+- `element.innerHTML` → injects HTML into an element  
+- `element.outerHTML` → replaces entire element  
+- `element.insertAdjacentHTML()` → inserts HTML at a position  
+- jQuery functions: `.html()`, `.attr()`, `$()` selector  
+
+## 🧩 Common Sinks
+
+These are DOM methods and properties that can interpret attacker‑controlled input as HTML or JavaScript. If user data flows into them, XSS may occur.
+
+
+
+1. `document.write()` :  Writes raw HTML directly into the page.
+-  Risk: Executes <script> immediately.
+- **Example**:
+  ```javascript
+  document.write("<script>alert(1)</script>");
+  ```
+2. `element.innerHTML` : Injects HTML inside an element.
+- Risk : <script> tags won’t run, but event handlers (onerror, onload, <img src=1 onerror=alert('asd')>) will.
+- **Example**
+```javascript
+div.innerHTML = "<img src=x onerror=alert(1)>";
+```
+3. `element.outerHTML` : Replaces the entire element with new HTML.
+- Risk : Can replace safe elements with malicious ones.
+- **Example**
+```javascript
+div.innerHTML = "<img src=x onerror=alert(1)>";
+```
+
+4. `element.insertAdjacentHTML()` : HTML relative to an element.
+- Risk: Same as innerHTML, but more flexible placement.
+- **Example**
+```javascript
+div.insertAdjacentHTML("beforeend", "<img src=x onerror=alert(1)>");
+```
+
+5. `eval()` : Executes a string as JavaScript.
+- Risk: Direct code execution — highest severity.
+- **Example**
+  ```javascript
+  eval("alert(document.cookie)");
+  ```
+
+6. `setTimeout() / setInterval() with string` : Interprets string argument as code.
+- Risk: Same danger as eval.
+- ```javascript
+  setTimeout("alert(1)", 1000);
+  ```
+7. Function() Constructor :  Creates a new function from a string.
+- Risk: Executes arbitrary code.
+- ```javascript
+  new Function("alert(1)")();
+  ```
+
+8. jQuery .html() -  Sets HTML content of an element.
+- Risk : Same as innerHTML.
+- ```javascript
+  $("#target").html("<img src=x onerror=alert(1)>");
+  ```
+
+9. jQuery .attr() : Sets attributes of elements.
+- Risk : Dangerous if attacker controls attribute values.
+- ```javascript
+  $("#link").attr("href", "javascript:alert(1)");
+  ```
+10.  jQuery $() Selector : Interprets input as a selector or HTML.
+- Risk : Can inject malicious HTML if input is not sanitized.
+- ```javascript
+  var el = $(location.hash); // attacker controls hash
+  ```
+
+11. location.href / element.src / element.action : Assigns URLs to navigation or resource attributes.
+- Risk : Open redirects or JS execution via javascript: URLs.
+- ```javascript
+  window.location.href = "javascript:alert(1)";
+  ```
+12. document.location / window.location : Redirects browser to attacker‑controlled URL.
+- Risk : Open redirects or JS execution via javascript: URLs.
+- ```javascript
+  document.location = "javascript:alert(1)";
+  ```  
+---
+
+📝 Key Takeaway
+- **HTML sinks** (innerHTML, outerHTML, insertAdjacentHTML, jQuery .html()) → require event handlers or special tags.
+- **Execution sinks** (eval, setTimeout with string, Function) → directly run attacker code.
+- **Attribute sinks** (.attr(), href, src, action) → can trigger redirects or load malicious resources.
+
+* Always trace source → sink paths when analyzing DOM XSS.
+---
