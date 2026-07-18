@@ -496,3 +496,71 @@ DOM‑XSS occurs when attacker‑controlled data flows into unsafe sinks. Below 
 - Encode output (`<` → `&lt;`, `>` → `&gt;`).  
 - Avoid unsafe sinks (`eval`, `document.write`, `innerHTML`).  
 - Upgrade libraries (e.g., jQuery) to patched versions.
+
+---
+
+# 🌐 Web Input → Server → Browser Flow
+
+## 1. User Input
+- User types data into a form or sends it via HTTP request.
+- Example: `<script>alert(1)</script>`
+
+---
+
+## 2. Server Handling
+- Server receives the raw input.
+- It may **encode** or **sanitize** before storing/returning.
+  - `<` → `&lt;`
+  - `>` → `&gt;`
+- **Safe server**: encodes input → prevents execution.
+- **Unsafe server**: returns raw input → risk of injection.
+
+---
+
+## 3. Response Back to Browser
+- Encoded input is sent as HTML entities.
+- Browser receives:
+  - Safe: `&lt;script&gt;alert(1)&lt;/script&gt;`
+  - Unsafe: `<script>alert(1)</script>`
+
+---
+
+## 4. HTML Parsing
+- Browser parses HTML into the **DOM tree**.
+- Encoded entities are decoded into characters but treated as **text**, not tags.
+- Raw tags (`<script>`) become actual DOM elements.
+
+---
+
+## 5. JavaScript Engine
+- If parser encounters `<script>`, it pauses and sends code to the **JS engine**.
+- Engine executes JavaScript:
+  - Can manipulate DOM
+  - Can send requests
+  - Can run logic
+- If input was encoded, engine never sees executable code.
+
+---
+
+## 🔒 Security Implications
+- **Encoding**: Defense against XSS (cross‑site scripting).
+- **Parsing**: Decides whether input is text or code.
+- **JS Engine**: Attackers aim to reach this layer to execute payloads.
+
+---
+
+## ⚡ Example Flow
+
+### Unsafe (XSS):
+1. Input: `<script>alert(1)</script>`
+2. Server: returns raw
+3. Browser: parses as `<script>`
+4. JS Engine: executes → popup
+
+### Safe (Encoded):
+1. Input: `<script>alert(1)</script>`
+2. Server: encodes → `&lt;script&gt;alert(1)&lt;/script&gt;`
+3. Browser: parses → shows literal text
+4. JS Engine: nothing runs
+
+---
